@@ -17,6 +17,16 @@ sol! {
         string proof_id;
     }
 
+    struct ClaimProof {
+        uint64 nonce;
+        string proof_id;
+    }
+
+    struct FulfillProof {
+        uint64 nonce;
+        string proof_id;
+    }
+
     struct RelayProof {
         uint64 nonce;
         string proof_id;
@@ -75,6 +85,37 @@ impl NetworkAuth {
         let domain_seperator = Self::get_domain_separator();
 
         let type_struct = SubmitProof {
+            nonce,
+            proof_id: proof_id.to_string(),
+        };
+
+        let message_hash = type_struct.eip712_signing_hash(&domain_seperator);
+        let signature = self.wallet.sign_hash(&message_hash).await?;
+
+        Ok(signature.as_bytes().to_vec())
+    }
+
+    /// Signs a message to claim a proof that was requested.
+    pub async fn sign_claim_proof_message(&self, nonce: u64, proof_id: &str) -> Result<Vec<u8>> {
+        let domain_seperator = Self::get_domain_separator();
+
+        let type_struct = ClaimProof {
+            nonce,
+            proof_id: proof_id.to_string(),
+        };
+
+        let message_hash = type_struct.eip712_signing_hash(&domain_seperator);
+        let signature = self.wallet.sign_hash(&message_hash).await?;
+
+        Ok(signature.as_bytes().to_vec())
+    }
+
+    /// Signs a message to fulfill a proof. The proof must have been previously claimed by the
+    /// signer first.
+    pub async fn sign_fulfill_proof_message(&self, nonce: u64, proof_id: &str) -> Result<Vec<u8>> {
+        let domain_seperator = Self::get_domain_separator();
+
+        let type_struct = FulfillProof {
             nonce,
             proof_id: proof_id.to_string(),
         };

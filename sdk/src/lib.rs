@@ -8,7 +8,6 @@ pub mod proto {
 pub mod auth;
 pub mod client;
 mod io;
-mod util;
 pub mod utils {
     pub use sp1_core::utils::{
         setup_logger, setup_tracer, BabyBearBlake3, BabyBearKeccak, BabyBearPoseidon2,
@@ -38,7 +37,6 @@ use std::fs;
 use std::time::Duration;
 use tokio::runtime;
 use tokio::time::sleep;
-use util::StageProgressBar;
 
 /// A proof of a RISCV ELF execution with given inputs and outputs.
 #[derive(Serialize, Deserialize)]
@@ -123,16 +121,14 @@ impl ProverClient {
         let proof_id = client.create_proof(elf, &stdin).await?;
         println!("proof_id: {:?}", proof_id);
 
-        let mut pb = StageProgressBar::new();
         loop {
             let (status, maybe_proof) = client
                 .get_proof_status::<BabyBearPoseidon2>(&proof_id)
                 .await?;
 
             match status.status() {
-                ProofStatus::ProofSucceeded => {
+                ProofStatus::ProofFulfilled => {
                     println!("Proof succeeded");
-                    pb.finish();
                     if let Some(proof) = maybe_proof {
                         return Ok(proof);
                     } else {
@@ -140,16 +136,9 @@ impl ProverClient {
                     }
                 }
                 ProofStatus::ProofFailed => {
-                    pb.finish();
                     return Err(anyhow::anyhow!("Proof generation failed"));
                 }
                 _ => {
-                    pb.update(
-                        status.stage,
-                        status.total_stages,
-                        &status.stage_name,
-                        status.stage_progress.map(|p| (p, status.stage_total())),
-                    );
                     sleep(Duration::from_secs(1)).await;
                 }
             }

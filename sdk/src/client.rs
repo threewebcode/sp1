@@ -12,9 +12,11 @@ use twirp::Client as TwirpClient;
 
 use crate::{
     proto::network::{
-        CreateProofRequest, GetNonceRequest, GetProofStatusRequest, GetProofStatusResponse,
-        GetRelayStatusRequest, GetRelayStatusResponse, NetworkServiceClient, ProofStatus,
-        RelayProofRequest, SubmitProofRequest, TransactionStatus,
+        ClaimProofRequest, ClaimProofResponse, CreateProofRequest, FulfillProofRequest,
+        FulfillProofResponse, GetNonceRequest, GetProofRequestsRequest, GetProofRequestsResponse,
+        GetProofStatusRequest, GetProofStatusResponse, GetRelayStatusRequest,
+        GetRelayStatusResponse, NetworkServiceClient, ProofStatus, RelayProofRequest,
+        SubmitProofRequest, TransactionStatus,
     },
     SP1ProofWithIO,
 };
@@ -87,6 +89,71 @@ impl NetworkClient {
         Ok(())
     }
 
+    pub async fn get_proof_status<SC: StarkGenericConfig + Serialize + DeserializeOwned>(
+        &self,
+        proof_id: &str,
+    ) -> Result<(GetProofStatusResponse, Option<SP1ProofWithIO<SC>>)> {
+        let res = self
+            .rpc
+            .get_proof_status(GetProofStatusRequest {
+                proof_id: proof_id.to_string(),
+            })
+            .await?;
+
+        let proof = if res.status() == ProofStatus::ProofFulfilled {
+            let proof = self
+                .http
+                .get(res.proof_url.clone())
+                .send()
+                .await?
+                .bytes()
+                .await?;
+            Some(bincode::deserialize(&proof).expect("Failed to deserialize proof"))
+        } else {
+            None
+        };
+
+        Ok((res, proof))
+    }
+
+    pub async fn get_proof_requests(
+        &self,
+        status: ProofStatus,
+    ) -> Result<GetProofRequestsResponse> {
+        let res = self
+            .rpc
+            .get_proof_requests(GetProofRequestsRequest {
+                status: status.into(),
+            })
+            .await?;
+
+        Ok(res)
+    }
+
+    pub async fn get_relay_status(
+        &self,
+        tx_id: &str,
+    ) -> Result<(GetRelayStatusResponse, Option<String>, Option<String>)> {
+        let res = self
+            .rpc
+            .get_relay_status(GetRelayStatusRequest {
+                tx_id: tx_id.to_string(),
+            })
+            .await?;
+
+        let tx_hash = match res.status() {
+            TransactionStatus::TransactionScheduled => None,
+            _ => Some(format!("0x{}", hex::encode(res.tx_hash.clone()))),
+        };
+
+        let simulation_url = match res.status() {
+            TransactionStatus::TransactionFailed => Some(res.simulation_url.clone()),
+            _ => None,
+        };
+
+        Ok((res, tx_hash, simulation_url))
+    }
+
     /// Makes a request to create a proof for the given ELF and stdin.
     pub async fn create_proof(&self, elf: &[u8], stdin: &SP1Stdin) -> Result<String> {
         let start = SystemTime::now();
@@ -108,8 +175,8 @@ impl NetworkClient {
 
         let program_bytes = bincode::serialize(elf)?;
         let stdin_bytes = bincode::serialize(&stdin)?;
-        let program_promise = self.upload_file(&res.program_put_url, program_bytes);
-        let stdin_promise = self.upload_file(&res.stdin_put_url, stdin_bytes);
+        let program_promise = self.upload_file(&res.program_url, program_bytes);
+        let stdin_promise = self.upload_file(&res.stdin_url, stdin_bytes);
         let v = vec![program_promise, stdin_promise];
         let mut results = join_all(v).await;
         results.pop().expect("Failed to upload stdin")?;
@@ -131,31 +198,37 @@ impl NetworkClient {
         Ok(res.proof_id)
     }
 
-    pub async fn get_proof_status<SC: StarkGenericConfig + Serialize + DeserializeOwned>(
-        &self,
-        proof_id: &str,
-    ) -> Result<(GetProofStatusResponse, Option<SP1ProofWithIO<SC>>)> {
+    pub async fn claim_proof(&self, proof_id: &str) -> Result<ClaimProofResponse> {
+        let nonce = self.get_nonce().await;
+        let signature = self.auth.sign_claim_proof_message(nonce, proof_id).await?;
         let res = self
             .rpc
-            .get_proof_status(GetProofStatusRequest {
+            .claim_proof(ClaimProofRequest {
+                nonce,
                 proof_id: proof_id.to_string(),
+                signature,
             })
             .await?;
 
-        let proof = if res.status() == ProofStatus::ProofSucceeded {
-            let proof = self
-                .http
-                .get(res.result_get_url.clone())
-                .send()
-                .await?
-                .bytes()
-                .await?;
-            Some(bincode::deserialize(&proof).expect("Failed to deserialize proof"))
-        } else {
-            None
-        };
+        Ok(res)
+    }
 
-        Ok((res, proof))
+    pub async fn fulfill_proof(&self, proof_id: &str) -> Result<FulfillProofResponse> {
+        let nonce = self.get_nonce().await;
+        let signature = self
+            .auth
+            .sign_fulfill_proof_message(nonce, proof_id)
+            .await?;
+        let res = self
+            .rpc
+            .fulfill_proof(FulfillProofRequest {
+                nonce,
+                proof_id: proof_id.to_string(),
+                signature,
+            })
+            .await?;
+
+        Ok(res)
     }
 
     pub async fn relay_proof(
@@ -182,29 +255,5 @@ impl NetworkClient {
         };
         let result = self.rpc.relay_proof(req).await?;
         Ok(result.tx_id)
-    }
-
-    pub async fn get_relay_status(
-        &self,
-        tx_id: &str,
-    ) -> Result<(GetRelayStatusResponse, Option<String>, Option<String>)> {
-        let res = self
-            .rpc
-            .get_relay_status(GetRelayStatusRequest {
-                tx_id: tx_id.to_string(),
-            })
-            .await?;
-
-        let tx_hash = match res.status() {
-            TransactionStatus::TransactionScheduled => None,
-            _ => Some(format!("0x{}", hex::encode(res.tx_hash.clone()))),
-        };
-
-        let simulation_url = match res.status() {
-            TransactionStatus::TransactionFailed => Some(res.simulation_url.clone()),
-            _ => None,
-        };
-
-        Ok((res, tx_hash, simulation_url))
     }
 }
