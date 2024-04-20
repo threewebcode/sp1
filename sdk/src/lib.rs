@@ -128,11 +128,11 @@ impl ProverClient {
 
             match status.status() {
                 ProofStatus::ProofFulfilled => {
-                    println!("Proof succeeded");
+                    println!("Proof fulfilled");
                     if let Some(proof) = maybe_proof {
                         return Ok(proof);
                     } else {
-                        return Err(anyhow::anyhow!("Proof succeeded but no proof available"));
+                        return Err(anyhow::anyhow!("Proof fulfilled but no proof available"));
                     }
                 }
                 ProofStatus::ProofFailed => {
