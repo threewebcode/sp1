@@ -1,6 +1,7 @@
 use std::{env, time::Duration};
 
 use crate::{auth::NetworkAuth, SP1Stdin};
+use anyhow::Context;
 use anyhow::{Ok, Result};
 use futures::future::join_all;
 use reqwest::{Client as HttpClient, Url};
@@ -102,19 +103,24 @@ impl NetworkClient {
             .get_proof_status(GetProofStatusRequest {
                 proof_id: proof_id.to_string(),
             })
-            .await?;
+            .await
+            .context("Failed to get proof status")?;
 
-        let proof = if res.status() == ProofStatus::ProofFulfilled {
-            let proof = self
-                .http
-                .get(res.proof_url.clone())
-                .send()
-                .await?
-                .bytes()
-                .await?;
-            Some(bincode::deserialize(&proof).expect("Failed to deserialize proof"))
-        } else {
-            None
+        let proof = match res.status() {
+            ProofStatus::ProofFulfilled => {
+                let proof_bytes = self
+                    .http
+                    .get(res.proof_url.clone())
+                    .send()
+                    .await
+                    .context("Failed to send HTTP request for proof")?
+                    .bytes()
+                    .await
+                    .context("Failed to load proof bytes")?;
+
+                Some(bincode::deserialize(&proof_bytes).context("Failed to deserialize proof")?)
+            }
+            _ => None,
         };
 
         Ok((res, proof))
