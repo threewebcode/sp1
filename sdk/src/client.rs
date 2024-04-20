@@ -33,6 +33,7 @@ pub struct NetworkClient {
 }
 
 impl NetworkClient {
+    // Create a new NetworkClient with the given private key for authentication.
     pub fn new(private_key: &str) -> Self {
         let auth = NetworkAuth::new(private_key);
 
@@ -61,6 +62,7 @@ impl NetworkClient {
         }
     }
 
+    // Get the address for the SP1 Verifier contract.
     pub fn get_sp1_verifier_address() -> [u8; 20] {
         let verifier_hex = env::var("SP1_VERIFIER_ADDRESS")
             .unwrap_or_else(|_| DEFAULT_SP1_VERIFIER_ADDRESS.to_string());
@@ -84,11 +86,13 @@ impl NetworkClient {
         res.nonce
     }
 
+    // Upload a file to the specified url.
     async fn upload_file(&self, url: &str, data: Vec<u8>) -> Result<()> {
         self.http.put(url).body(data).send().await?;
         Ok(())
     }
 
+    // Get the status of a given proof.
     pub async fn get_proof_status<SC: StarkGenericConfig + Serialize + DeserializeOwned>(
         &self,
         proof_id: &str,
@@ -116,6 +120,7 @@ impl NetworkClient {
         Ok((res, proof))
     }
 
+    // Get all the proof requests for a given status.
     pub async fn get_proof_requests(
         &self,
         status: ProofStatus,
@@ -130,6 +135,7 @@ impl NetworkClient {
         Ok(res)
     }
 
+    // Get the status of a relay request transaction.
     pub async fn get_relay_status(
         &self,
         tx_id: &str,
@@ -154,7 +160,7 @@ impl NetworkClient {
         Ok((res, tx_hash, simulation_url))
     }
 
-    /// Makes a request to create a proof for the given ELF and stdin.
+    /// Makes a proof request for the given ELF and stdin.
     pub async fn create_proof(&self, elf: &[u8], stdin: &SP1Stdin) -> Result<String> {
         let start = SystemTime::now();
         let since_the_epoch = start
@@ -198,6 +204,7 @@ impl NetworkClient {
         Ok(res.proof_id)
     }
 
+    // Claim a proof that was requested. This commits to generating a proof and fulfilling it.
     pub async fn claim_proof(&self, proof_id: &str) -> Result<ClaimProofResponse> {
         let nonce = self.get_nonce().await;
         let signature = self.auth.sign_claim_proof_message(nonce, proof_id).await?;
@@ -213,6 +220,8 @@ impl NetworkClient {
         Ok(res)
     }
 
+    // Fulfill a proof. Should only be called after the proof has been uploaded. Only callable by the
+    // prover that claimed the proof.
     pub async fn fulfill_proof(&self, proof_id: &str) -> Result<FulfillProofResponse> {
         let nonce = self.get_nonce().await;
         let signature = self
@@ -231,6 +240,7 @@ impl NetworkClient {
         Ok(res)
     }
 
+    // Relay a proof. Should only be called after a proof has been fulfilled.
     pub async fn relay_proof(
         &self,
         proof_id: &str,
