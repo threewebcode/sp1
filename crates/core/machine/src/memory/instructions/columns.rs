@@ -82,10 +82,10 @@ pub struct MemoryInstructionsColumns<T> {
     pub most_sig_byte: T,
 
     /// Flag for load memory instructions that contains bool value of
-    /// (memory value is neg) && (op_a != registor 0).
+    /// (memory value is neg) && (op_a != register 0).
     pub mem_value_is_neg_not_x0: T,
     /// Flag for load memory instructions that contains bool value of
-    /// (memory value is pos) && (op_a != registor 0).
+    /// (memory value is pos) && (op_a != register 0).
     pub mem_value_is_pos_not_x0: T,
 
     /// This is used to check if the most significant three bytes of the memory address are all zero.

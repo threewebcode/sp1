@@ -49,7 +49,7 @@ impl CpuChip {
         // the memory access for op_a in the syscall instructions chip.  The reason we do that is
         // to eval syscall instructions, op_a prev value is needed, specifically to get the syscall_id.
         // Sending op_a prev value via an interaction is wasteful, since it would require that all
-        // receviers of the interaction to witness the value.  It will be wasteful to put that column
+        // receivers of the interaction to witness the value.  It will be wasteful to put that column
         // in all other instruction chips.
         builder.eval_memory_access(
             local.shard,
